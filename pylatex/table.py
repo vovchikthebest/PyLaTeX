@@ -10,7 +10,7 @@ from .base_classes import LatexObject, Container, Command, UnsafeCommand, \
     Float, Environment
 from .package import Package
 from .errors import TableRowSizeError, TableError
-from .utils import dumps_list, NoEscape, escape_latex
+from .utils import dumps_list, NoEscape
 
 from collections import Counter
 import re
@@ -52,6 +52,10 @@ class Tabular(Environment):
         'table_spec': 'arguments',
         'pos': 'options',
     }
+
+    packages = [Package('booktabs')]
+    #: Set this to True to enable booktabs style tables
+    booktabs = False
 
     def __init__(self, table_spec, data=None, pos=None, *,
                  row_height=None, col_space=None, width=None, arguments=None,
@@ -123,8 +127,36 @@ class Tabular(Environment):
 
         return string + super().dumps()
 
-    def add_hline(self, start=None, end=None, *, color=None):
-        """Add a horizontal line to the table.
+    def dumps_content(self, **kwargs):
+        r"""Represent the content of the tabular in LaTeX syntax.
+
+        This adds the top and bottomrule when using a booktabs style tabular.
+
+        Args
+        ----
+        \*\*kwargs:
+            Arguments that can be passed to `~.dumps_list`
+
+        Returns
+        -------
+        string:
+            A LaTeX string representing the
+        """
+
+        content = ''
+        if self.booktabs:
+            content += '\\toprule%\n'
+
+        content += super().dumps_content(**kwargs)
+
+        if self.booktabs:
+            content += '\\bottomrule%\n'
+
+        return NoEscape(content)
+
+    def add_hline(self, start=None, end=None, *, color=None,
+                  cmidruleoption=None):
+        r"""Add a horizontal line to the table.
 
         Args
         ----
@@ -134,10 +166,20 @@ class Tabular(Environment):
             At what cell the line should end
         color: str
             The hline color.
+        cmidruleoption: str
+            The option to be used for the booktabs cmidrule, i.e. the ``x`` in
+            ``\cmidrule(x){1-3}``.
         """
+        if self.booktabs:
+            hline = 'midrule'
+            cline = 'cmidrule'
+            if cmidruleoption is not None:
+                cline += '(' + cmidruleoption + ')'
+        else:
+            hline = 'hline'
+            cline = 'cline'
 
         if color is not None:
-            # TODO: This check should not be needed.
             if not self.color:
                 self.packages.append(Package('xcolor', options='table'))
                 self.color = True
@@ -145,18 +187,15 @@ class Tabular(Environment):
             self.append(color_command)
 
         if start is None and end is None:
-            self.append(NoEscape(r'\hline'))
+            self.append(Command(hline))
         else:
             if start is None:
                 start = 1
             elif end is None:
                 end = self.width
 
-            if self.escape:
-                start = escape_latex(start)
-                end = escape_latex(end)
-
-            self.append(UnsafeCommand('cline', start + '-' + end))
+            self.append(Command(cline,
+                                dumps_list([start, NoEscape('-'), end])))
 
     def add_empty_row(self):
         """Add an empty row to the table."""
